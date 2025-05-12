@@ -1,12 +1,15 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
-import { chatCompletionRequestSchema } from "@shared/schema";
+import { chatCompletionRequestSchema, insertMessageSchema, insertChatSessionSchema } from "@shared/schema";
 import { generateOpenAIResponse } from "./services/openai";
 import { generateDeepSeekResponse } from "./services/openrouter";
 import { generateMaverickResponse, handleImageUpload } from "./services/openrouter-maverick";
 import { handleSearch } from "./services/search";
 import { log } from "./vite";
+import { db } from "./db";
+import { messages, chatSessions } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Image upload endpoint
@@ -59,7 +62,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (hasRole && hasContent) {
         // Direct format from Maverick service
-        const typedResponse = response as { role: string; content: any; model?: string };
+        const typedResponse = response as unknown as { role: string; content: any; model?: string };
         
         if (typeof typedResponse.content === 'string') {
           previewContent = typedResponse.content.substring(0, 50);
@@ -93,6 +96,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       log(`Model ${chatRequest.model} response: ${previewContent}...`);
       
+      // Store messages in the database if sessionId is provided
+      if (chatRequest.sessionId) {
+        try {
+          // First, store the user message
+          const lastUserMessage = chatRequest.messages[chatRequest.messages.length - 1];
+          if (lastUserMessage.role === 'user') {
+            await db.insert(messages).values({
+              role: lastUserMessage.role,
+              content: typeof lastUserMessage.content === 'string' 
+                ? lastUserMessage.content 
+                : JSON.stringify(lastUserMessage.content),
+              model: chatRequest.model,
+              sessionId: parseInt(chatRequest.sessionId)
+            });
+          }
+          
+          // Then store the assistant's response
+          await db.insert(messages).values({
+            role: formattedResponse.message.role,
+            content: formattedResponse.message.content,
+            model: formattedResponse.model,
+            sessionId: parseInt(chatRequest.sessionId)
+          });
+          
+          // Update the chat session's updatedAt timestamp
+          await db
+            .update(chatSessions)
+            .set({ updatedAt: new Date() })
+            .where(eq(chatSessions.id, parseInt(chatRequest.sessionId)));
+        } catch (dbError: any) {
+          log(`Error storing messages in database: ${dbError.message}`, "error");
+          // Continue with the response even if database storage fails
+        }
+      }
+      
       // Return the standardized response
       return res.status(200).json(formattedResponse);
     } catch (error: any) {
@@ -111,6 +149,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Chat sessions endpoints
+  app.post("/api/chat-sessions", async (req, res) => {
+    try {
+      const validationResult = insertChatSessionSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid request format", 
+          errors: validationResult.error.format() 
+        });
+      }
+
+      const [newSession] = await db
+        .insert(chatSessions)
+        .values(validationResult.data)
+        .returning();
+
+      return res.status(201).json(newSession);
+    } catch (error: any) {
+      log(`Error creating chat session: ${error.message}`, "error");
+      return res.status(500).json({ message: error.message || "Failed to create chat session" });
+    }
+  });
+
+  app.get("/api/chat-sessions", async (req, res) => {
+    try {
+      const allSessions = await db
+        .select()
+        .from(chatSessions)
+        .orderBy(chatSessions.updatedAt);
+
+      return res.status(200).json(allSessions);
+    } catch (error: any) {
+      log(`Error fetching chat sessions: ${error.message}`, "error");
+      return res.status(500).json({ message: error.message || "Failed to fetch chat sessions" });
+    }
+  });
+
+  app.get("/api/chat-sessions/:id", async (req, res) => {
+    try {
+      const sessionId = parseInt(req.params.id);
+      
+      if (isNaN(sessionId)) {
+        return res.status(400).json({ message: "Invalid session ID" });
+      }
+
+      const [session] = await db
+        .select()
+        .from(chatSessions)
+        .where(eq(chatSessions.id, sessionId));
+
+      if (!session) {
+        return res.status(404).json({ message: "Chat session not found" });
+      }
+
+      const sessionMessages = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.sessionId, sessionId))
+        .orderBy(messages.timestamp);
+
+      return res.status(200).json({
+        ...session,
+        messages: sessionMessages
+      });
+    } catch (error: any) {
+      log(`Error fetching chat session: ${error.message}`, "error");
+      return res.status(500).json({ message: error.message || "Failed to fetch chat session" });
+    }
+  });
+
+  app.delete("/api/chat-sessions/:id", async (req, res) => {
+    try {
+      const sessionId = parseInt(req.params.id);
+      
+      if (isNaN(sessionId)) {
+        return res.status(400).json({ message: "Invalid session ID" });
+      }
+
+      // First delete all messages for this session
+      await db
+        .delete(messages)
+        .where(eq(messages.sessionId, sessionId));
+
+      // Then delete the session
+      const [deletedSession] = await db
+        .delete(chatSessions)
+        .where(eq(chatSessions.id, sessionId))
+        .returning();
+
+      if (!deletedSession) {
+        return res.status(404).json({ message: "Chat session not found" });
+      }
+
+      return res.status(200).json({ message: "Chat session deleted successfully" });
+    } catch (error: any) {
+      log(`Error deleting chat session: ${error.message}`, "error");
+      return res.status(500).json({ message: error.message || "Failed to delete chat session" });
+    }
+  });
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     const missingKeys = [];
@@ -122,11 +261,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!process.env.OPENROUTER_API_KEY) {
       missingKeys.push("OPENROUTER_API_KEY");
     }
+
+    if (!process.env.DATABASE_URL) {
+      missingKeys.push("DATABASE_URL");
+    }
     
     if (missingKeys.length > 0) {
       return res.status(500).json({ 
         status: "error", 
-        message: `Missing API keys: ${missingKeys.join(", ")}` 
+        message: `Missing environment variables: ${missingKeys.join(", ")}` 
       });
     }
     
