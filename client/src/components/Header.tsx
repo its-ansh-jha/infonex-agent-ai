@@ -1,15 +1,23 @@
 import React from 'react';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChat } from '@/context/ChatContext';
 import { useChatHistory } from '@/context/ChatHistoryContext';
 import { useToast } from '@/hooks/use-toast';
 import logoImage from '../assets/logo.webp';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useLocation } from 'wouter';
 
 export function Header() {
   const { clearMessages } = useChat();
   const { startNewChat } = useChatHistory();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   
   const handleNewChat = () => {
     // Create a new chat
@@ -42,6 +50,32 @@ export function Header() {
             <PlusCircle className="h-4 w-4 mr-1" />
             New Chat
           </Button>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="p-2 rounded-full bg-neutral-800 hover:bg-neutral-700 border-neutral-700 text-white transition-colors"
+              >
+                <Menu className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-neutral-800 border-neutral-700 text-white">
+              <DropdownMenuItem 
+                className="hover:bg-neutral-700 cursor-pointer" 
+                onClick={() => navigate("/privacy-policy")}
+              >
+                Privacy Policy
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                className="hover:bg-neutral-700 cursor-pointer" 
+                onClick={() => navigate("/terms-conditions")}
+              >
+                Terms & Conditions
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       <div className="text-center pb-1 text-xs text-neutral-500">
