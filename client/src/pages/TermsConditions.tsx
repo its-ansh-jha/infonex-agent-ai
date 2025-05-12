@@ -1,13 +1,13 @@
 import React from 'react';
 import { Link } from 'wouter';
-import { Header } from '@/components/Header';
+import { PolicyHeader } from '@/components/PolicyHeader';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 
 export default function TermsConditions() {
   return (
     <div className="flex flex-col min-h-screen bg-neutral-900 text-white">
-      <Header />
+      <PolicyHeader />
       
       <div className="container mx-auto px-4 py-6 max-w-4xl">
         <Button
