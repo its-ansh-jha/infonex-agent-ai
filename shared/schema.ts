@@ -10,10 +10,9 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-  email: true,
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -28,9 +27,10 @@ export const chatSessions = pgTable("chat_sessions", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertChatSessionSchema = createInsertSchema(chatSessions).pick({
-  userId: true,
-  title: true,
+export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
 });
 
 export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
@@ -46,11 +46,9 @@ export const messages = pgTable("messages", {
   sessionId: integer("session_id").references(() => chatSessions.id).notNull(),
 });
 
-export const insertMessageSchema = createInsertSchema(messages).pick({
-  role: true,
-  content: true,
-  model: true,
-  sessionId: true,
+export const insertMessageSchema = createInsertSchema(messages).omit({
+  id: true,
+  timestamp: true,
 });
 
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
