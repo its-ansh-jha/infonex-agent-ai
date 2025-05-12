@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, json } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -6,15 +6,35 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  email: text("email").unique(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
+  email: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+// Chat Sessions table
+export const chatSessions = pgTable("chat_sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  title: text("title").notNull().default("New Conversation"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertChatSessionSchema = createInsertSchema(chatSessions).pick({
+  userId: true,
+  title: true,
+});
+
+export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
+export type ChatSession = typeof chatSessions.$inferSelect;
 
 // Chat Messages Schema
 export const messages = pgTable("messages", {
@@ -22,20 +42,21 @@ export const messages = pgTable("messages", {
   role: text("role").notNull(), // user, assistant, system
   content: text("content").notNull(),
   model: text("model").notNull(), // gpt-4o-mini, deepseek-r1
-  timestamp: text("timestamp").notNull(),
-  sessionId: text("session_id").notNull(),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  sessionId: integer("session_id").references(() => chatSessions.id).notNull(),
 });
 
 export const insertMessageSchema = createInsertSchema(messages).pick({
   role: true,
   content: true,
   model: true,
-  timestamp: true,
   sessionId: true,
 });
 
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = typeof messages.$inferSelect;
+
+// Relations are defined through foreign keys in the table schemas
 
 // Define the image content type schema
 const imageContentSchema = z.object({
