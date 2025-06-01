@@ -110,9 +110,9 @@ export function TextToSpeech({ text }: TextToSpeechProps) {
     } else {
       // Default to English
       selectedVoice = voices.find(voice => 
-        voice.lang.includes('en-US') || voice.lang.includes('en-GB')
+        voice.lang.includes('hi-IN') || voice.lang.includes('en-GB')
       );
-      utterance.lang = 'en-US';
+      utterance.lang = 'hi-IN';
     }
     
     // If we found a matching voice, use it
